@@ -2,5 +2,265 @@
 
 This is the source code for the https://github.com/RedHatWorkshops/quarkus-workshop[Quarkus Workshop].
 
-This workshop focuses on https://quarkus.io[Quarkus], supersonic, subatomic container-native Java. The workshop uses https://eclipse.org/che[Eclipse Che] to develop Quarkus apps and deploy them to a Kubernetes cluster (based on OpenShift), and covers several other developer topics.
+This workshop focuses on https://quarkus.io[Quarkus], supersonic, subatomic container-native Java.
+The workshop uses https://eclipse.org/che[Eclipse Che] to develop Quarkus apps and deploy them to a
+Kubernetes cluster (based on OpenShift), and covers several other developer topics.
 
+
+
+== Openapi & Swagger UI
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="smallrye-openapi"
+----
+
+== Deploy in OpenShift
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="openshift"
+----
+
+Deploying:
+
+[source,bash]
+----
+mvn clean package -Pnative -DskipTests -Dquarkus.package.uber-jar=false
+----
+
+Testing:
+
+[source,bash]
+----
+curl $(oc get route people -o=go-template --template='{{ .spec.host }}')/hello/greeting/quarkus-on-openshift
+----
+
+== MicroProfile Health Checks 
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="smallrye-health"
+----
+
+Adding Liveness and Readiness proves:
+
+[source,bash]
+----
+oc set probe dc/people --readiness --initial-delay-seconds=5 --period-seconds=5 --failure-threshold=20 --get-url=http://:8080/health/ready
+oc set probe dc/people --liveness --initial-delay-seconds=5 --period-seconds=5 --failure-threshold=20  --get-url=http://:8080/health/live 
+oc rollout latest dc/people
+----
+
+== Quarkus Persistence
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="hibernate-orm-panache, jdbc-h2, jdbc-postgresql, resteasy-jsonb"
+----
+
+Testing:
+
+[source,bash]
+----
+curl http://localhost:8080/person/eyes/BLUE
+[{"id":1,"birth":"1974-08-15","eyes":"BLUE","name":"Farid Ulyanov"}]
+----
+
+[source,bash]
+----
+curl http://localhost:8080/person/birth/before/1977
+[{"id":1,"birth":"1974-08-15","eyes":"BLUE","name":"Farid Ulyanov"}]
+----
+
+[source,bash]
+----
+curl -s "http://localhost:8080/person/datatable?draw=1&start=0&length=2&search\[value\]=F" | jq
+----
+
+Annotate objects to showed in topology diagram:
+
+[source,bash]
+----
+oc label dc/postgresql-database  app.openshift.io/runtime=postgresql --overwrite
+oc label dc/people app.kubernetes.io/part-of=people --overwrite
+oc label dc/postgresql-database app.kubernetes.io/part-of=people --overwrite
+oc annotate dc/people app.openshift.io/connects-to=postgresql-database --overwrite
+----
+
+== Event-Driven Messaging
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="vertx"
+----
+
+Testing:
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8080/person/joe | jq
+{
+  "id": 1009,
+  "birth": "2007-01-09",
+  "eyes": "HAZEL",
+  "name": "joe"
+}
+----
+
+[source,bash]
+----
+curl  http://localhost:8080/person/name/joe | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100    60  100    60    0     0   8571      0 --:--:-- --:--:-- --:--:--  8571
+{
+  "id": 1004,
+  "birth": "2002-01-15",
+  "eyes": "BROWN",
+  "name": "joe"
+}
+----
+
+[source,bash]
+----
+curl -s https://swapi.dev/api/people/1/ | jq
+----
+
+[source,bash]
+----
+curl -s http://$(oc get route people -o=go-template --template='{{ .spec.host }}')/person/swpeople | jq
+----
+
+== Streaming Data 
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="messaging-kafka"
+----
+
+== Quarkus Metrics
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="smallrye-metrics"
+----
+
+Testing:
+
+[source,bash]
+----
+curl http://localhost:8080/metrics/application
+----
+
+== Quarkus Tracing
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="smallrye-opentracing,rest-client"
+----
+
+== Quarkus JWT
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="jwt"
+----
+
+Testing:
+
+[source,bash]
+----
+curl -i http://$(oc get route people -o=go-template --template='{{ .spec.host }}')/secured/me
+----
+
+[source,bash]
+----
+export ALICE_TOKEN=$(\
+    curl -s -X POST https://secure-rhsso-rhsso.apps.cluster-qrks-5db8.qrks-5db8.sandbox956.opentlc.com/auth/realms/quarkus/protocol/openid-connect/token \
+    --user backend-service:secret \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    -d 'username=alice&password=alice&grant_type=password' | jq --raw-output '.access_token' \
+ ) && echo $ALICE_TOKEN
+----
+
+[source,bash]
+----
+curl -i http://$(oc get route people -o=go-template --template='{{ .spec.host }}')/secured/me \
+  -H "Authorization: Bearer $ALICE_TOKEN"
+----
+
+[source,bash]
+----
+export ADMIN_TOKEN=$(\
+    curl -s -X POST https://secure-rhsso-rhsso.apps.cluster-qrks-5db8.qrks-5db8.sandbox956.opentlc.com/auth/realms/quarkus/protocol/openid-connect/token \
+    --user backend-service:secret \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    -d 'username=admin&password=admin&grant_type=password' | jq --raw-output '.access_token' \
+ ) && echo $ADMIN_TOKEN
+----
+
+[source,bash]
+----
+curl -i http://$(oc get route people -o=go-template --template='{{ .spec.host }}')/secured/me/admin \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+----
+
+== Quarkus Keycloak & OpenID Connect 
+
+Quarkus Extensions:
+
+[source,bash]
+----
+mvn -q quarkus:add-extension -Dextensions="oidc, keycloak-authorization"
+----
+
+Testing:
+
+[source,bash]
+----
+export ADMIN_TOKEN=$(\
+    curl -s -X POST https://secure-rhsso-rhsso.apps.cluster-qrks-5db8.qrks-5db8.sandbox956.opentlc.com/auth/realms/quarkus/protocol/openid-connect/token \
+    --user backend-service:secret \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    -d 'username=admin&password=admin&grant_type=password' | jq --raw-output '.access_token' \
+ ) && echo $ADMIN_TOKEN
+----
+
+[source,bash]
+----
+curl -i -X GET \
+  http://$(oc get route people -o=go-template --template='{{ .spec.host }}')/secured/confidential \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+----
+
+[source,bash]
+----
+export JDOE_TOKEN=$(\
+    curl -s -X POST https://secure-rhsso-rhsso.apps.cluster-qrks-5db8.qrks-5db8.sandbox956.opentlc.com/auth/realms/quarkus/protocol/openid-connect/token \
+    --user backend-service:secret \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    -d 'username=jdoe&password=jdoe&grant_type=password' | jq --raw-output '.access_token' \
+ ) && echo $JDOE_TOKEN
+----
+
+[source,bash]
+----
+ curl -i -X GET \
+  http://$(oc get route people -o=go-template --template='{{ .spec.host }}')/secured/confidential \
+  -H "Authorization: Bearer $JDOE_TOKEN"
+----

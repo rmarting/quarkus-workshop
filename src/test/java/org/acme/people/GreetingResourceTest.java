@@ -17,8 +17,18 @@ public class GreetingResourceTest {
           .when().get("/hello")
           .then()
              .statusCode(200)
-             .body(is("hello"));
+             .body(is("hello quarkus in dev mode!"));
     }
 
-    // add more tests
+    @Test
+    public void testHelloGreetingEndpoint() {
+        String uuid = UUID.randomUUID().toString();
+        given()
+          .pathParam("name", uuid)
+          .when().get("/hello/greeting/{name}")
+          .then()
+             .statusCode(200)
+             .body(startsWith("hello " + uuid));
+    }
+
 }
